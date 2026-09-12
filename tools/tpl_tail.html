@@ -1,0 +1,296 @@
+;
+
+/* ================= helpers ================= */
+const MON=['января','февраля','марта','апреля','мая','июня','июля','августа','сентября','октября','ноября','декабря'];
+const MONNOM=['Январь','Февраль','Март','Апрель','Май','Июнь','Июль','Август','Сентябрь','Октябрь','Ноябрь','Декабрь'];
+const WD=['Пн','Вт','Ср','Чт','Пт','Сб','Вс'];
+const WDFULL=['Понедельник','Вторник','Среда','Четверг','Пятница','Суббота','Воскресенье'];
+const STAGES={
+ 'Темы':              {n:1,cls:'st1',short:'Темы',    act:'прислать план тем эксперту'},
+ 'Голосовые':         {n:2,cls:'st2',short:'Голосовые',act:'эксперт записывает и присылает'},
+ 'Сценарий':          {n:3,cls:'st3',short:'Сценарий', act:'написать и отдать сценарии'},
+ 'Съёмка видео':      {n:4,cls:'st4',short:'Съёмка',   act:'эксперт снимает ролики'},
+ 'Монтаж и публикация':{n:5,cls:'st5',short:'Монтаж',  act:'смонтировать и опубликовать'}
+};
+const ORDER=Object.keys(STAGES);
+const pad=n=>String(n).padStart(2,'0');
+const iso=d=>d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate());
+const D=s=>{const[y,m,d]=s.split('-').map(Number);return new Date(y,m-1,d)};
+const addDays=(s,n)=>{const d=D(s);d.setDate(d.getDate()+n);return iso(d)};
+const dow=s=>(D(s).getDay()+6)%7;
+const fmt=s=>{const d=D(s);return d.getDate()+' '+MON[d.getMonth()]};
+const fmtShort=s=>{const d=D(s);return pad(d.getDate())+'.'+pad(d.getMonth()+1)};
+const esc=s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const surname=n=>n.split(' ')[1]||n;
+const TODAY=iso(new Date());
+
+/* ================= model ================= */
+const EXPERTS=DATA.experts, BYNAME={};
+EXPERTS.forEach(e=>BYNAME[e.name]=e);
+const absentOn=(name,day)=>(BYNAME[name].absences||[]).find(a=>day>=a.from&&day<=a.to);
+
+/* expand multi-day events into per-day slots */
+const SLOTS=[];
+DATA.events.forEach((ev,i)=>{
+ const id=[ev.expert,ev.cycle,ev.stage,ev.start].join('|');
+ for(let k=0;k<ev.days;k++){
+  const day=addDays(ev.start,k);
+  SLOTS.push({id,day,part:k+1,total:ev.days,expert:ev.expert,cycle:ev.cycle,
+   stage:ev.stage,who:ev.who,start:ev.start,end:ev.end,
+   absence:absentOn(ev.expert,day)});
+ }
+});
+SLOTS.sort((a,b)=>a.day.localeCompare(b.day)||STAGES[a.stage].n-STAGES[b.stage].n||a.expert.localeCompare(b.expert));
+const BYDAY={};SLOTS.forEach(s=>(BYDAY[s.day]=BYDAY[s.day]||[]).push(s));
+const ALLDAYS=Object.keys(BYDAY).sort();
+const FIRST=ALLDAYS[0], LAST=ALLDAYS[ALLDAYS.length-1];
+
+/* ================= state ================= */
+const LS='teamcal_done_v1';
+let done=new Set();
+try{done=new Set(JSON.parse(localStorage.getItem(LS)||'[]'))}catch(e){}
+const saveDone=()=>{try{localStorage.setItem(LS,JSON.stringify([...done]))}catch(e){}};
+const st={view:'days',who:'all',stages:new Set(ORDER),experts:new Set(EXPERTS.map(e=>e.name)),
+          past:false,hideDone:false,
+          week:weekStart(TODAY>=FIRST&&TODAY<=LAST?TODAY:FIRST)};
+function weekStart(d){return addDays(d,-dow(d))}
+const pass=s=>st.stages.has(s.stage)&&st.experts.has(s.expert)&&(st.who==='all'||s.who===st.who)
+              &&!(st.hideDone&&done.has(s.id));
+const daySlots=d=>(BYDAY[d]||[]).filter(pass);
+
+/* ================= pieces ================= */
+function taskRow(s,compact){
+ const m=STAGES[s.stage], isDone=done.has(s.id);
+ const badges=[];
+ if(s.total>1)badges.push(`<span class="badge">день ${s.part} из ${s.total} · ${fmtShort(s.start)}–${fmtShort(s.end)}</span>`);
+ badges.push(`<span class="badge">${esc(s.cycle||'')}</span>`);
+ if(s.absence)badges.push(`<span class="badge warn">⚠ эксперт ${esc(s.absence.label)}</span>`);
+ return `<div class="task ${m.cls} ${isDone?'done':''}" data-id="${esc(s.id)}">
+   <input class="cb" type="checkbox" ${isDone?'checked':''} aria-label="Выполнено">
+   <button class="who" data-expert="${esc(s.expert)}">${esc(s.expert)}</button>
+   <div class="act"><b>${m.short}</b> — ${m.act}</div>
+   <div class="meta">${badges.join('')}</div>
+ </div>`;
+}
+function dayCard(d,opts={}){
+ const list=daySlots(d);
+ const team=list.filter(s=>s.who==='Команда'), exp=list.filter(s=>s.who==='Эксперт');
+ const isToday=d===TODAY, isPast=d<TODAY;
+ const abs=EXPERTS.filter(e=>st.experts.has(e.name)&&absentOn(e.name,d));
+ let g='';
+ if(team.length)g+=`<div class="group"><div class="grouplabel"><i></i>Команда делает (${team.length})</div>
+   <div class="rows">${team.map(s=>taskRow(s)).join('')}</div></div>`;
+ if(exp.length)g+=`<div class="group"><div class="grouplabel exp"><i></i>Ждём от эксперта (${exp.length})</div>
+   <div class="rows">${exp.map(s=>taskRow(s)).join('')}</div></div>`;
+ if(!list.length)g=`<div class="empty">Задач нет${abs.length?'':' — свободный день'}</div>`;
+ if(abs.length)g+=`<div class="absnote">Нет на связи: ${abs.map(e=>esc(e.name)+' ('+fmtShort(absentOn(e.name,d).from)+'–'+fmtShort(absentOn(e.name,d).to)+')').join(', ')}</div>`;
+ const wd=dow(d);
+ return `<section class="day ${isToday?'today':''} ${isPast&&!isToday?'past':''}" id="d${d}">
+  <div class="dayhead">
+   <span class="daynum">${fmt(d)}</span>
+   <span class="dayw ${wd>4?'we':''}">${WDFULL[wd]}</span>
+   ${isToday?'<span class="daytag">сегодня</span>':''}
+   ${d===addDays(TODAY,1)?'<span class="badge">завтра</span>':''}
+   <span class="daycount">${list.length?list.length+' '+plural(list.length,'задача','задачи','задач'):''}</span>
+  </div>${g}</section>`;
+}
+const plural=(n,a,b,c)=>{const m=n%100,k=n%10;return m>10&&m<20?c:k===1?a:k>1&&k<5?b:c};
+
+/* ================= views ================= */
+function viewDays(){
+ let days=ALLDAYS.filter(d=>daySlots(d).length||EXPERTS.some(e=>st.experts.has(e.name)&&absentOn(e.name,d)));
+ if(!st.past)days=days.filter(d=>d>=TODAY);
+ if(!days.length)return `<p class="empty" style="padding:30px 0">Ничего не найдено — снимите фильтры или включите «прошедшие дни».</p>`;
+ let html='',wk='';
+ days.forEach(d=>{
+  const ws=weekStart(d);
+  if(ws!==wk){wk=ws;html+=`<div class="weekhead">Неделя ${fmtShort(ws)} — ${fmtShort(addDays(ws,6))}</div>`}
+  html+=dayCard(d);
+ });
+ return html;
+}
+function viewWeek(){
+ const ws=st.week, days=[...Array(7)].map((_,i)=>addDays(ws,i));
+ const rows=EXPERTS.filter(e=>st.experts.has(e.name)).map(e=>{
+  const cells=days.map(d=>{
+   const a=absentOn(e.name,d);
+   const items=daySlots(d).filter(s=>s.expert===e.name);
+   let inner=items.map(s=>{const m=STAGES[s.stage];
+     return `<span class="mini ${m.cls}">${m.short}${s.total>1?' <em>'+s.part+'/'+s.total+'</em>':''}<em> · ${s.who==='Команда'?'команда':'эксперт'}</em></span>`}).join('');
+   if(a&&!items.length)inner=`<span class="miniout">отсутствует</span>`;
+   else if(a)inner+=`<span class="miniout">отсутствует</span>`;
+   return `<td class="${d===TODAY?'today':''}">${inner}</td>`}).join('');
+  return `<tr><td class="ecol"><button class="who" data-expert="${esc(e.name)}">${esc(e.name)}</button></td>${cells}</tr>`;
+ }).join('');
+ const th=days.map(d=>`<th class="dcol ${d===TODAY?'today':''}">${WD[dow(d)]}<small>${fmtShort(d)}</small></th>`).join('');
+ return `<div class="navrow">
+   <button class="nav" id="wPrev" title="Предыдущая неделя">‹</button>
+   <button class="nav" id="wNext" title="Следующая неделя">›</button>
+   <h2>${fmt(ws)} — ${fmt(addDays(ws,6))}</h2>
+   <div class="spacer"></div><button class="ctl" id="wToday">Текущая неделя</button></div>
+  <div class="gridwrap"><table class="wk"><thead><tr><th class="ecol">Эксперт</th>${th}</tr></thead>
+  <tbody>${rows||'<tr><td class="ecol">—</td><td colspan="7" class="empty">Нет экспертов в фильтре</td></tr>'}</tbody></table></div>`;
+}
+function viewMonth(){
+ const months=[];let m=D(FIRST);m.setDate(1);
+ const last=D(LAST);
+ while(m<=last){months.push(iso(m));m=new Date(m.getFullYear(),m.getMonth()+1,1)}
+ return `<div class="months">`+months.map(ms=>{
+  const first=D(ms), y=first.getFullYear(), mo=first.getMonth();
+  const nd=new Date(y,mo+1,0).getDate(), off=dow(ms);
+  let cells='';
+  for(let i=0;i<off;i++)cells+=`<div class="mcell blank"></div>`;
+  for(let day=1;day<=nd;day++){
+   const d=y+'-'+pad(mo+1)+'-'+pad(day), list=daySlots(d);
+   const dots=ORDER.filter(s=>list.some(x=>x.stage===s)).map(s=>`<i class="${STAGES[s].cls}"></i>`).join('');
+   const names=[...new Set(list.map(s=>surname(s.expert)))].slice(0,4).join(', ');
+   cells+=`<button class="mcell ${d===TODAY?'today':''}" data-day="${d}">
+     <span class="n">${day}${list.length?'<b>'+list.length+'</b>':''}</span>
+     <span class="dots">${dots}</span><span class="mnames">${esc(names)}</span></button>`;
+  }
+  return `<div class="mcard"><h3>${MONNOM[mo]} ${y}</h3>
+   <div class="mgrid">${WD.map(w=>`<div class="wd">${w}</div>`).join('')}${cells}</div></div>`;
+ }).join('')+`</div>`;
+}
+function viewExperts(){
+ return `<div class="exgrid" style="margin-top:18px">`+EXPERTS.filter(e=>st.experts.has(e.name)).map(e=>{
+  const evs=DATA.events.filter(x=>x.expert===e.name);
+  const cycles=[...new Set(evs.map(x=>x.cycle))];
+  const chain=cycles.map(c=>{
+   const steps=evs.filter(x=>x.cycle===c).sort((a,b)=>STAGES[a.stage].n-STAGES[b.stage].n)
+    .map(x=>{const m=STAGES[x.stage];
+      return `<span class="step ${m.cls}">${m.short} <em>${fmtShort(x.start)}${x.days>1?'–'+fmtShort(x.end):''}</em></span>`}).join('');
+   return `<div class="cyc"><div class="cname">${esc(c)}</div><div class="chain">${steps}</div></div>`}).join('');
+  return `<div class="excard"><h3>${esc(e.name)}</h3>
+   <a class="lnk" href="${e.sheet}" target="_blank" rel="noopener">Личный календарь ↗</a>
+   ${chain}
+   <dl class="facts">
+    <dt>Голосовые</dt><dd>${esc(e.voice||'—')}</dd>
+    <dt>Съёмка</dt><dd>${esc(e.shoot||'—')}</dd>
+    <dt>Объём</dt><dd>${esc(e.volume||'—')}</dd>
+    <dt>Сценарий</dt><dd>${esc(e.lead||'—')}</dd>
+    ${(e.absences||[]).length?`<dt>Отсутствие</dt><dd>${e.absences.map(a=>fmtShort(a.from)+'–'+fmtShort(a.to)).join(', ')}</dd>`:''}
+   </dl>
+   ${(e.notes||[]).map(n=>`<div class="note">${esc(n)}</div>`).join('')}</div>`;
+ }).join('')+`</div>`;
+}
+
+/* ================= drawer ================= */
+function openExpert(name){
+ const e=BYNAME[name];if(!e)return;
+ const evs=DATA.events.filter(x=>x.expert===name);
+ const next=SLOTS.filter(s=>s.expert===name&&s.day>=TODAY).slice(0,6);
+ document.getElementById('drawer').innerHTML=`<button class="x" id="dx">✕</button>
+  <div class="eyebrow">эксперт</div><h2 style="font-size:20px;margin:4px 0 6px">${esc(name)}</h2>
+  <a class="lnk" href="${e.sheet}" target="_blank" rel="noopener">Личный контент-календарь ↗</a>
+  <dl class="facts" style="margin-top:14px">
+   <dt>Старт месяца</dt><dd>${esc(e.start||'—')}</dd>
+   <dt>Голосовые</dt><dd>${esc(e.voice||'—')}</dd>
+   <dt>Съёмка</dt><dd>${esc(e.shoot||'—')}</dd>
+   <dt>Роликов за подход</dt><dd>${esc(e.volume||'—')}</dd>
+   <dt>Сценарий нужен</dt><dd>${esc(e.lead||'—')}</dd>
+   ${(e.absences||[]).length?`<dt>Отсутствие</dt><dd>${e.absences.map(a=>fmtShort(a.from)+'–'+fmtShort(a.to)+' ('+esc(a.label)+')').join('<br>')}</dd>`:''}
+  </dl>
+  ${(e.notes||[]).map(n=>`<div class="note">${esc(n)}</div>`).join('')}
+  <div class="weekhead" style="margin:20px 0 10px">Ближайшие шаги</div>
+  <div class="rows">${next.length?next.map(s=>`<div class="task ${STAGES[s.stage].cls}">
+     <span class="bar"></span><span class="who" style="cursor:default">${fmt(s.day)}, ${WD[dow(s.day)]}</span>
+     <div class="act"><b>${STAGES[s.stage].short}</b> — ${s.who==='Команда'?'команда':'эксперт'}</div>
+     <div class="meta"><span class="badge">${esc(s.cycle)}</span></div></div>`).join(''):'<div class="empty">Запланированных шагов нет</div>'}</div>
+  <div class="weekhead" style="margin:20px 0 10px">Все циклы</div>
+  ${[...new Set(evs.map(x=>x.cycle))].map(c=>`<div class="cyc"><div class="cname">${esc(c)}</div><div class="chain">${
+    evs.filter(x=>x.cycle===c).sort((a,b)=>STAGES[a.stage].n-STAGES[b.stage].n).map(x=>{const m=STAGES[x.stage];
+    return `<span class="step ${m.cls}">${m.short} <em>${fmtShort(x.start)}</em></span>`}).join('')}</div></div>`).join('')}`;
+ document.getElementById('drawer').classList.add('on');
+ document.getElementById('scrim').classList.add('on');
+ document.getElementById('dx').onclick=closeDrawer;
+}
+function closeDrawer(){document.getElementById('drawer').classList.remove('on');document.getElementById('scrim').classList.remove('on')}
+
+/* ================= header ================= */
+function renderHeader(){
+ document.getElementById('subline').innerHTML=
+  `${EXPERTS.length} экспертов · ${DATA.events.length} задач · период ${fmtShort(FIRST)} — ${fmtShort(LAST)}.2026 · `+
+  `<a href="${DATA.source}" target="_blank" rel="noopener">сводная таблица календарей ↗</a>`;
+ const wkStart=weekStart(TODAY), wkEnd=addDays(wkStart,6);
+ const inWeek=SLOTS.filter(s=>s.day>=wkStart&&s.day<=wkEnd);
+ const todayL=BYDAY[TODAY]||[], future=SLOTS.filter(s=>s.day>=TODAY);
+ document.getElementById('stats').innerHTML=[
+  ['Экспертов',EXPERTS.length],['Циклов',new Set(DATA.events.map(e=>e.expert+e.cycle)).size],
+  ['Задач всего',DATA.events.length],['Сегодня',todayL.length],
+  ['На этой неделе',inWeek.length],['Осталось впереди',future.length]
+ ].map(([k,v])=>`<div class="stat"><b>${v}</b><span>${k}</span></div>`).join('');
+ const card=(day,title)=>{
+  const list=(BYDAY[day]||[]);
+  const team=list.filter(s=>s.who==='Команда'),exp=list.filter(s=>s.who==='Эксперт');
+  const block=(arr,label,cls)=>arr.length?`<div class="grouplabel ${cls}" style="margin-top:8px"><i></i>${label}</div>
+    <div class="nowlist">${arr.map(s=>taskRow(s)).join('')}</div>`:'';
+  return `<div class="nowcard ${day===TODAY?'is-today':''}">
+   <h3>${title}</h3><div class="dt">${fmt(day)}, ${WDFULL[dow(day)].toLowerCase()}</div>
+   ${list.length?block(team,'Команда делает','')+block(exp,'Ждём от эксперта','exp'):'<div class="empty">Задач нет — можно выдохнуть</div>'}
+  </div>`};
+ document.getElementById('nowpanel').innerHTML=card(TODAY,'Сегодня')+card(addDays(TODAY,1),'Завтра');
+ document.getElementById('legend').innerHTML=ORDER.map(s=>
+  `<span class="${STAGES[s].cls}"><i></i>${s}</span>`).join('')+
+  `<span style="color:var(--ink3)">заливка «Команда делает» / «Ждём от эксперта» — кто ответственный</span>`;
+ document.getElementById('footnote').innerHTML=
+  `Собрано из ${EXPERTS.length} личных контент-календарей · данные от ${esc(DATA.generated)} · `+
+  `отметки «выполнено» хранятся только в этом браузере`;
+}
+function renderChips(){
+ const c=document.getElementById('chips');
+ c.innerHTML=`<span class="chip" data-all="stages">Этапы:</span>`+
+  ORDER.map(s=>`<span class="chip ${STAGES[s].cls} ${st.stages.has(s)?'on':'off'}" data-stage="${esc(s)}"><i class="dot"></i>${STAGES[s].short}</span>`).join('')+
+  `<span style="width:14px"></span><span class="chip" data-all="experts">Эксперты:</span>`+
+  EXPERTS.map(e=>`<span class="chip ${st.experts.has(e.name)?'on':'off'}" data-expert-f="${esc(e.name)}">${esc(e.name)}</span>`).join('');
+}
+
+/* ================= render ================= */
+function render(){
+ renderHeader();renderChips();
+ const m=document.getElementById('main');
+ m.innerHTML=st.view==='days'?viewDays():st.view==='week'?viewWeek():st.view==='month'?viewMonth():viewExperts();
+ [...document.querySelectorAll('#tabs button')].forEach(b=>b.setAttribute('aria-selected',b.dataset.view===st.view));
+ if(st.view==='week'){
+  document.getElementById('wPrev').onclick=()=>{st.week=addDays(st.week,-7);render()};
+  document.getElementById('wNext').onclick=()=>{st.week=addDays(st.week,7);render()};
+  document.getElementById('wToday').onclick=()=>{st.week=weekStart(TODAY);render()};
+ }
+}
+document.addEventListener('click',ev=>{
+ const t=ev.target;
+ const tab=t.closest('#tabs button'); if(tab){st.view=tab.dataset.view;render();return}
+ const ex=t.closest('.who[data-expert]'); if(ex){openExpert(ex.dataset.expert);return}
+ const ch=t.closest('.chip'); if(ch){
+  if(ch.dataset.stage){st.stages.has(ch.dataset.stage)?st.stages.delete(ch.dataset.stage):st.stages.add(ch.dataset.stage)}
+  else if(ch.dataset.expertF){st.experts.has(ch.dataset.expertF)?st.experts.delete(ch.dataset.expertF):st.experts.add(ch.dataset.expertF)}
+  else if(ch.dataset.all==='stages'){st.stages=st.stages.size===ORDER.length?new Set():new Set(ORDER)}
+  else if(ch.dataset.all==='experts'){st.experts=st.experts.size===EXPERTS.length?new Set():new Set(EXPERTS.map(e=>e.name))}
+  render();return}
+ const cell=t.closest('.mcell[data-day]'); if(cell){
+  const d=cell.dataset.day;
+  if(d<TODAY){st.past=true;document.getElementById('pastCb').checked=true}
+  st.view='days';render();
+  const el=document.getElementById('d'+d); if(el)el.scrollIntoView({behavior:'smooth',block:'start'});
+  return}
+ if(t.id==='scrim'){closeDrawer();return}
+ if(t.id==='todayBtn'){
+  st.view='days';render();
+  let d=TODAY;while(d<=LAST&&!document.getElementById('d'+d))d=addDays(d,1);
+  const el=document.getElementById('d'+d)||document.getElementById('main');
+  el.scrollIntoView({behavior:'smooth',block:'start'});return}
+});
+document.addEventListener('change',ev=>{
+ const t=ev.target;
+ if(t.classList.contains('cb')){
+  const id=t.closest('.task').dataset.id;
+  t.checked?done.add(id):done.delete(id);saveDone();render();return}
+ if(t.id==='whoSel'){st.who=t.value;render()}
+ if(t.id==='pastCb'){st.past=t.checked;render()}
+ if(t.id==='doneCb'){st.hideDone=t.checked;render()}
+});
+document.addEventListener('keydown',e=>{if(e.key==='Escape')closeDrawer()});
+render();
+</script>
+</body>
+</html>

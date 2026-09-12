@@ -1,0 +1,248 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Календарь команды — контент экспертов</title>
+<meta name="description" content="Единый календарь: что и в какой день делает команда и эксперты">
+<style>
+:root{
+  --bg:#f6f7f9; --card:#ffffff; --ink:#14171f; --ink2:#5b6472; --ink3:#8b94a3;
+  --line:#e4e7ec; --line2:#eef0f4; --accent:#3b5bdb; --today:#fff8e6; --todayline:#f2b40f;
+  --s1:#7c5cff; --s2:#e8a317; --s3:#2e7cf6; --s4:#e0424b; --s5:#12a37a;
+  --shadow:0 1px 2px rgba(16,24,40,.05),0 6px 20px rgba(16,24,40,.05);
+  --radius:14px;
+}
+@media (prefers-color-scheme:dark){
+ :root:not([data-theme="light"]){
+  --bg:#0e1116; --card:#161a21; --ink:#eef1f6; --ink2:#a4adbb; --ink3:#79828f;
+  --line:#252b34; --line2:#1e232b; --accent:#7d97ff; --today:#221d0c; --todayline:#c99b1c;
+  --s1:#9b82ff; --s2:#f0b542; --s3:#5d9bff; --s4:#f4707a; --s5:#2cc79b;
+  --shadow:0 1px 2px rgba(0,0,0,.4),0 8px 24px rgba(0,0,0,.28);
+ }
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);
+ font:15px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Inter,Roboto,"Helvetica Neue",Arial,sans-serif;
+ -webkit-font-smoothing:antialiased}
+.wrap{max-width:1180px;margin:0 auto;padding:0 18px}
+a{color:var(--accent)}
+h1,h2,h3{margin:0;letter-spacing:-.02em}
+
+/* ---------- header ---------- */
+header.top{background:var(--card);border-bottom:1px solid var(--line)}
+.top .wrap{padding-block:22px 18px}
+.eyebrow{font-size:12px;letter-spacing:.12em;text-transform:uppercase;color:var(--ink3);font-weight:600}
+h1{font-size:27px;margin:6px 0 4px;font-weight:680}
+.sub{color:var(--ink2);font-size:14px}
+.stats{display:flex;flex-wrap:wrap;gap:10px;margin-top:16px}
+.stat{background:var(--bg);border:1px solid var(--line);border-radius:10px;padding:8px 12px;min-width:104px}
+.stat b{display:block;font-size:20px;font-weight:680;letter-spacing:-.02em}
+.stat span{font-size:11.5px;color:var(--ink3);text-transform:uppercase;letter-spacing:.06em}
+
+/* ---------- today panel ---------- */
+.now{margin-top:18px;display:grid;grid-template-columns:1fr 1fr;gap:14px}
+.nowcard{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:14px 16px;box-shadow:var(--shadow)}
+.nowcard.is-today{border-color:var(--todayline);background:linear-gradient(180deg,var(--today),var(--card) 70%)}
+.nowcard h3{font-size:13px;text-transform:uppercase;letter-spacing:.1em;color:var(--ink3);font-weight:700}
+.nowcard .dt{font-size:17px;font-weight:660;margin:2px 0 10px}
+.nowlist{display:flex;flex-direction:column;gap:7px}
+.empty{color:var(--ink3);font-size:13.5px;padding:4px 0}
+
+/* ---------- toolbar ---------- */
+.toolbar{position:sticky;top:0;z-index:40;background:color-mix(in srgb,var(--bg) 88%,transparent);
+ backdrop-filter:blur(8px);border-bottom:1px solid var(--line);margin-top:22px}
+.toolbar .wrap{display:flex;flex-wrap:wrap;gap:10px;align-items:center;padding-block:10px}
+.tabs{display:flex;background:var(--card);border:1px solid var(--line);border-radius:10px;padding:3px;gap:2px}
+.tabs button{appearance:none;border:0;background:transparent;color:var(--ink2);font:inherit;font-size:13.5px;
+ font-weight:560;padding:6px 13px;border-radius:7px;cursor:pointer}
+.tabs button[aria-selected="true"]{background:var(--accent);color:#fff}
+.spacer{flex:1}
+.ctl{display:flex;align-items:center;gap:6px;background:var(--card);border:1px solid var(--line);
+ border-radius:10px;padding:5px 10px;font-size:13.5px;color:var(--ink2);cursor:pointer;position:relative}
+.ctl select{appearance:none;border:0;background:transparent;color:var(--ink);font:inherit;font-size:13.5px;cursor:pointer;padding-right:2px}
+.ctl input{accent-color:var(--accent)}
+.chipbar{display:flex;flex-wrap:wrap;gap:6px;padding-block:0 12px}
+.chip{border:1px solid var(--line);background:var(--card);color:var(--ink2);border-radius:999px;
+ padding:4px 11px;font-size:12.5px;cursor:pointer;display:inline-flex;align-items:center;gap:6px;font-weight:520}
+.chip.on{color:var(--ink);border-color:currentColor;box-shadow:inset 0 0 0 1px currentColor}
+.chip .dot{width:8px;height:8px;border-radius:50%;background:currentColor}
+.chip.off{opacity:.45}
+
+/* ---------- stage dots ---------- */
+.st1{color:var(--s1)} .st2{color:var(--s2)} .st3{color:var(--s3)} .st4{color:var(--s4)} .st5{color:var(--s5)}
+
+/* ---------- task row ---------- */
+.task{display:grid;grid-template-columns:18px minmax(130px,1.05fr) minmax(150px,1.5fr) auto;
+ gap:10px;align-items:center;padding:7px 10px;border-radius:9px;border:1px solid var(--line2);
+ border-left:3px solid currentColor;background:color-mix(in srgb,currentColor 7%,var(--bg))}
+.task:hover{border-color:var(--line);border-left-color:currentColor}
+.task .bar{width:4px;height:20px;border-radius:3px;background:currentColor;justify-self:center}
+.task .who{font-weight:600;font-size:14px;color:var(--ink);cursor:pointer;text-align:left;
+ background:none;border:0;font-family:inherit;padding:0}
+.task .who:hover{text-decoration:underline}
+.task .act{font-size:13.5px;color:var(--ink2)}
+.task .act b{color:currentColor;font-weight:620}
+.task .meta{display:flex;gap:6px;align-items:center;flex-wrap:wrap;justify-content:flex-end}
+.badge{font-size:11px;padding:2px 7px;border-radius:6px;background:var(--card);border:1px solid var(--line);color:var(--ink3);white-space:nowrap}
+.badge.warn{color:#b45309;border-color:#f3cf8a;background:#fff7e6}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]) .badge.warn{color:#f0b542;background:#2a220e;border-color:#5a4718}}
+.task.done{opacity:.45}
+.task.done .act,.task.done .who{text-decoration:line-through}
+.cb{width:16px;height:16px;accent-color:var(--accent);cursor:pointer;margin:0}
+
+/* ---------- day cards ---------- */
+.weekhead{display:flex;align-items:center;gap:12px;margin:26px 0 12px;color:var(--ink3);
+ font-size:12px;font-weight:650;text-transform:uppercase;letter-spacing:.1em}
+.weekhead::after{content:"";flex:1;height:1px;background:var(--line)}
+.day{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);
+ padding:14px 16px;margin-bottom:10px;box-shadow:var(--shadow);scroll-margin-top:110px}
+.day.today{border-color:var(--todayline);box-shadow:0 0 0 3px color-mix(in srgb,var(--todayline) 22%,transparent),var(--shadow)}
+.day.past{opacity:.62}
+.dayhead{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;margin-bottom:10px}
+.daynum{font-size:19px;font-weight:680;letter-spacing:-.02em}
+.dayw{font-size:13px;color:var(--ink3);text-transform:uppercase;letter-spacing:.08em;font-weight:640}
+.dayw.we{color:var(--s4)}
+.daytag{font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;
+ background:var(--todayline);color:#231a00;border-radius:5px;padding:2px 7px}
+.daycount{margin-left:auto;font-size:12.5px;color:var(--ink3)}
+.group{margin-top:10px}
+.grouplabel{font-size:11.5px;font-weight:700;letter-spacing:.09em;text-transform:uppercase;
+ color:var(--ink3);margin-bottom:6px;display:flex;align-items:center;gap:7px}
+.grouplabel i{width:6px;height:6px;border-radius:50%;background:var(--accent);display:inline-block}
+.grouplabel.exp i{background:var(--s2)}
+.rows{display:flex;flex-direction:column;gap:6px}
+.absnote{margin-top:10px;font-size:12.5px;color:var(--ink3);border-top:1px dashed var(--line);padding-top:8px}
+
+/* ---------- week grid ---------- */
+.navrow{display:flex;align-items:center;gap:10px;margin:18px 0 12px}
+.navrow h2{font-size:18px;font-weight:660}
+.nav{appearance:none;border:1px solid var(--line);background:var(--card);color:var(--ink);
+ width:32px;height:32px;border-radius:9px;cursor:pointer;font-size:15px;line-height:1}
+.gridwrap{overflow-x:auto;background:var(--card);border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow)}
+table.wk{border-collapse:collapse;width:100%;min-width:860px}
+table.wk th,table.wk td{border-bottom:1px solid var(--line2);border-right:1px solid var(--line2);
+ padding:8px 9px;vertical-align:top;text-align:left}
+table.wk th{position:sticky;top:0;background:var(--card);z-index:2;font-size:12px;font-weight:660;color:var(--ink2)}
+table.wk th.dcol small{display:block;color:var(--ink3);font-weight:520;font-size:11px}
+table.wk th.today,table.wk td.today{background:var(--today)}
+table.wk td.ecol,table.wk th.ecol{position:sticky;left:0;background:var(--card);z-index:1;min-width:150px;
+ font-size:13px;font-weight:580;border-right:1px solid var(--line)}
+table.wk th.ecol{z-index:3}
+.mini{display:block;font-size:11.5px;font-weight:600;border-radius:6px;padding:3px 6px;margin-bottom:3px;
+ background:color-mix(in srgb,currentColor 13%,transparent);border-left:3px solid currentColor;line-height:1.3}
+.mini em{font-style:normal;color:var(--ink3);font-weight:520}
+.miniout{display:block;font-size:11px;color:var(--ink3);background:repeating-linear-gradient(45deg,var(--line2),var(--line2) 5px,transparent 5px,transparent 10px);
+ border-radius:6px;padding:3px 6px;text-align:center}
+
+/* ---------- month ---------- */
+.months{display:grid;gap:18px}
+.mcard{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:14px 16px 16px;box-shadow:var(--shadow)}
+.mcard h3{font-size:16px;font-weight:660;margin-bottom:10px;text-transform:capitalize}
+.mgrid{display:grid;grid-template-columns:repeat(7,1fr);gap:5px}
+.mgrid .wd{font-size:11px;color:var(--ink3);text-transform:uppercase;letter-spacing:.06em;text-align:center;padding-bottom:4px;font-weight:640}
+.mcell{min-height:74px;border:1px solid var(--line2);border-radius:9px;padding:5px 6px;background:var(--bg);cursor:pointer;text-align:left;font:inherit}
+.mcell:hover{border-color:var(--accent)}
+.mcell.blank{background:transparent;border-color:transparent;cursor:default}
+.mcell.today{background:var(--today);border-color:var(--todayline)}
+.mcell .n{font-size:12.5px;font-weight:660;color:var(--ink2);display:flex;justify-content:space-between;align-items:center}
+.mcell .n b{font-size:10.5px;font-weight:700;color:var(--ink3)}
+.dots{display:flex;flex-wrap:wrap;gap:3px;margin-top:4px}
+.dots i{width:7px;height:7px;border-radius:50%;background:currentColor;display:block}
+.mnames{margin-top:3px;font-size:10.5px;color:var(--ink3);line-height:1.35;overflow:hidden}
+
+/* ---------- experts ---------- */
+.exgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(340px,1fr));gap:14px}
+.excard{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:15px 16px;box-shadow:var(--shadow)}
+.excard h3{font-size:16px;font-weight:660}
+.excard .lnk{font-size:12.5px}
+.cyc{margin-top:11px}
+.cyc .cname{font-size:11.5px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--ink3);margin-bottom:5px}
+.chain{display:flex;flex-wrap:wrap;gap:5px}
+.step{font-size:11.5px;border-radius:7px;padding:3px 8px;border-left:3px solid currentColor;
+ background:color-mix(in srgb,currentColor 12%,transparent);font-weight:600;white-space:nowrap}
+.step em{font-style:normal;color:var(--ink3);font-weight:520}
+dl.facts{margin:12px 0 0;display:grid;grid-template-columns:auto 1fr;gap:5px 12px;font-size:12.5px}
+dl.facts dt{color:var(--ink3);white-space:nowrap}
+dl.facts dd{margin:0;color:var(--ink2)}
+.note{margin-top:11px;font-size:12.5px;background:#fff7e6;border:1px solid #f3cf8a;color:#7a4c07;border-radius:9px;padding:8px 10px}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]) .note{background:#2a220e;border-color:#5a4718;color:#f0b542}}
+
+footer{color:var(--ink3);font-size:12.5px;padding:32px 0 44px;text-align:center}
+.legend{display:flex;flex-wrap:wrap;gap:14px;justify-content:center;margin-bottom:10px;font-size:12.5px;color:var(--ink2)}
+.legend span{display:inline-flex;align-items:center;gap:6px}
+.legend i{width:9px;height:9px;border-radius:50%;background:currentColor}
+
+/* ---------- drawer ---------- */
+.scrim{position:fixed;inset:0;background:rgba(10,13,18,.5);z-index:90;opacity:0;pointer-events:none;transition:opacity .18s}
+.scrim.on{opacity:1;pointer-events:auto}
+.drawer{position:fixed;top:0;right:0;bottom:0;width:min(440px,100%);background:var(--card);z-index:91;
+ border-left:1px solid var(--line);transform:translateX(100%);transition:transform .22s ease;overflow-y:auto;padding:18px 20px 40px}
+.drawer.on{transform:none}
+.drawer .x{position:absolute;top:12px;right:14px;border:1px solid var(--line);background:var(--bg);color:var(--ink);
+ width:30px;height:30px;border-radius:8px;cursor:pointer;font-size:15px}
+
+@media (max-width:760px){
+ .now{grid-template-columns:1fr}
+ h1{font-size:22px}
+ .task{grid-template-columns:18px 1fr;row-gap:2px}
+ .task .bar{grid-row:span 3}
+ .task .meta{justify-content:flex-start}
+ .toolbar .wrap{gap:8px}
+ .mcell{min-height:58px}
+ .mnames{display:none}
+}
+@media print{
+ .toolbar,.chipbar,.scrim,.drawer,.cb,.nav{display:none!important}
+ body{background:#fff}
+ .day{break-inside:avoid;box-shadow:none}
+}
+</style>
+</head>
+<body>
+
+<header class="top">
+ <div class="wrap">
+  <div class="eyebrow">Продюсерский центр · производство контента</div>
+  <h1>Календарь команды</h1>
+  <div class="sub" id="subline"></div>
+  <div class="stats" id="stats"></div>
+  <div class="now" id="nowpanel"></div>
+ </div>
+</header>
+
+<div class="toolbar">
+ <div class="wrap">
+  <div class="tabs" role="tablist" id="tabs">
+   <button role="tab" data-view="days" aria-selected="true">По дням</button>
+   <button role="tab" data-view="week" aria-selected="false">Неделя</button>
+   <button role="tab" data-view="month" aria-selected="false">Месяц</button>
+   <button role="tab" data-view="experts" aria-selected="false">Эксперты</button>
+  </div>
+  <label class="ctl" title="Показывать только задачи команды или только то, что ждём от экспертов">
+   <select id="whoSel">
+    <option value="all">Все задачи</option>
+    <option value="Команда">Только команда</option>
+    <option value="Эксперт">Только эксперты</option>
+   </select>
+  </label>
+  <label class="ctl"><input type="checkbox" id="pastCb"> прошедшие дни</label>
+  <label class="ctl"><input type="checkbox" id="doneCb"> скрыть выполненные</label>
+  <div class="spacer"></div>
+  <button class="ctl" id="todayBtn">↓ К сегодня</button>
+ </div>
+ <div class="wrap"><div class="chipbar" id="chips"></div></div>
+</div>
+
+<main class="wrap" id="main"></main>
+
+<footer class="wrap">
+ <div class="legend" id="legend"></div>
+ <div id="footnote"></div>
+</footer>
+
+<div class="scrim" id="scrim"></div>
+<aside class="drawer" id="drawer" aria-hidden="true"></aside>
+
+<script>
+const DATA =
