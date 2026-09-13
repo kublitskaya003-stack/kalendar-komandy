@@ -324,6 +324,11 @@ const DATA =
      "from": "2026-11-12",
      "to": "2026-11-19",
      "label": "отсутствует"
+    },
+    {
+     "from": "2027-01-27",
+     "to": "2027-02-07",
+     "label": "отсутствует"
     }
    ]
   },
@@ -332,7 +337,7 @@ const DATA =
    "sheet": "https://docs.google.com/spreadsheets/d/1IdBESO24RtnBMXYD4UHUCcNUVtPTt8ZKPkMJ6FiV6FY/edit",
    "start": "14.09.2026",
    "voice": "присылаем вам план тем — вы записываете голосовые (сутки запаса).",
-   "shoot": "съёмка, через сутки после сценария. ",
+   "shoot": "съёмка, через сутки после сценария.",
    "volume": "",
    "lead": "сценарий — за сутки до съёмки",
    "notes": [],
@@ -362,6 +367,26 @@ const DATA =
     {
      "from": "2026-10-19",
      "to": "2026-10-25",
+     "label": "отсутствует"
+    },
+    {
+     "from": "2026-12-28",
+     "to": "2027-01-10",
+     "label": "отсутствует"
+    },
+    {
+     "from": "2027-03-15",
+     "to": "2027-03-21",
+     "label": "отсутствует"
+    },
+    {
+     "from": "2027-05-24",
+     "to": "2027-05-30",
+     "label": "отсутствует"
+    },
+    {
+     "from": "2027-07-19",
+     "to": "2027-08-01",
      "label": "отсутствует"
     }
    ]
@@ -2001,7 +2026,7 @@ const DATA =
   }
  ],
  "source": "https://docs.google.com/spreadsheets/d/1a2P_pGPWy2UQ_fx9rzSlPcrTgjRaj_MWLV3C0B0aEjk/edit",
- "generated": "12.09.2026"
+ "generated": "12.09.2026, 12:17 МСК"
 };
 
 /* ================= helpers ================= */
@@ -2239,6 +2264,7 @@ function renderHeader(){
   `<span style="color:var(--ink3)">заливка «Команда делает» / «Ждём от эксперта» — кто ответственный</span>`;
  document.getElementById('footnote').innerHTML=
   `Собрано из ${EXPERTS.length} личных контент-календарей · данные от ${esc(DATA.generated)} · `+
+  `страница пересобирается из таблиц автоматически раз в час · `+
   `отметки «выполнено» хранятся только в этом браузере`;
 }
 function renderChips(){
