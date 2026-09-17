@@ -182,6 +182,46 @@ footer{color:var(--ink3);font-size:12.5px;padding:32px 0 44px;text-align:center}
 .drawer .x{position:absolute;top:12px;right:14px;border:1px solid var(--line);background:var(--bg);color:var(--ink);
  width:30px;height:30px;border-radius:8px;cursor:pointer;font-size:15px}
 
+/* ---------- состав команды ---------- */
+.panel{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);
+ box-shadow:var(--shadow);padding:18px 20px;margin-top:18px}
+.panel h2{font-size:19px;font-weight:660}
+.panel .hint{color:var(--ink2);font-size:13.5px;margin:6px 0 0;max-width:760px}
+.rgroup{margin-top:20px}
+.rgroup h3{font-size:12.5px;text-transform:uppercase;letter-spacing:.1em;color:var(--ink3);font-weight:700;
+ display:flex;align-items:center;gap:8px}
+.rgroup h3 b{color:var(--ink);font-weight:700}
+.roster{display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:10px;margin-top:10px}
+.rrow{display:flex;align-items:center;gap:12px;border:1px solid var(--line);border-radius:11px;
+ padding:10px 12px;background:var(--bg)}
+.rrow .rname{font-weight:600;font-size:14.5px;display:block}
+.rrow .rmeta{color:var(--ink3);font-size:12.5px;margin-top:2px}
+.rrow .rinfo{flex:1;min-width:0}
+.rrow.off{opacity:.62}
+.rrow.off .rname{text-decoration:line-through;text-decoration-color:var(--ink3)}
+.sw{appearance:none;border:1px solid var(--line);background:var(--card);color:var(--ink2);
+ font:inherit;font-size:12.5px;font-weight:560;padding:6px 12px;border-radius:999px;cursor:pointer;white-space:nowrap}
+.sw:hover{border-color:var(--accent);color:var(--accent)}
+.sw.on{background:var(--accent);border-color:var(--accent);color:#fff}
+.sw.on:hover{color:#fff;opacity:.9}
+.syncbadge{display:inline-flex;align-items:center;gap:6px;font-size:12.5px;color:var(--ink3);
+ border:1px solid var(--line);background:var(--card);border-radius:10px;padding:5px 10px}
+.syncbadge i{width:7px;height:7px;border-radius:50%;background:var(--s5);flex:none}
+.syncbadge.busy i{background:var(--s2)}
+.syncbadge.bad i{background:var(--s4)}
+.offnote{margin-top:10px;font-size:12.5px;color:var(--ink3)}
+.syncbadge.ro i{background:var(--ink3)}
+.syncbadge{cursor:default}
+.syncbadge.ro{cursor:pointer}
+.keybar{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:16px;padding:12px 14px;
+ border:1px solid var(--line);border-radius:12px;background:var(--card);box-shadow:var(--shadow);font-size:13.5px;color:var(--ink2)}
+.keybar.ask{border-color:var(--accent)}
+.keybar b{color:var(--ink)}
+.keybar div{flex:1;min-width:260px}
+.keybar input{font:inherit;padding:7px 11px;border:1px solid var(--line);border-radius:9px;
+ background:var(--bg);color:var(--ink);min-width:200px}
+.keybar input:focus{outline:2px solid var(--accent);outline-offset:1px}
+
 @media (max-width:760px){
  .now{grid-template-columns:1fr}
  h1{font-size:22px}
@@ -218,6 +258,7 @@ footer{color:var(--ink3);font-size:12.5px;padding:32px 0 44px;text-align:center}
    <button role="tab" data-view="week" aria-selected="false">Неделя</button>
    <button role="tab" data-view="month" aria-selected="false">Месяц</button>
    <button role="tab" data-view="experts" aria-selected="false">Эксперты</button>
+   <button role="tab" data-view="roster" aria-selected="false">Состав команды</button>
   </div>
   <label class="ctl" title="Показывать только задачи команды или только то, что ждём от экспертов">
    <select id="whoSel">
@@ -229,9 +270,22 @@ footer{color:var(--ink3);font-size:12.5px;padding:32px 0 44px;text-align:center}
   <label class="ctl"><input type="checkbox" id="pastCb"> прошедшие дни</label>
   <label class="ctl"><input type="checkbox" id="doneCb"> скрыть выполненные</label>
   <div class="spacer"></div>
+  <span class="syncbadge" id="syncbadge" title="Отметки и состав команды хранятся в общей базе — их видно на всех компьютерах"><i></i><span>синхронизация…</span></span>
   <button class="ctl" id="todayBtn">↓ К сегодня</button>
  </div>
  <div class="wrap"><div class="chipbar" id="chips"></div></div>
+</div>
+
+<div class="wrap">
+ <div class="keybar" id="keybar" hidden>
+  <div>
+   <b>Только чтение.</b> Введите ключ команды — тогда можно отмечать выполненное
+   и включать/выключать экспертов, и это увидят все.
+  </div>
+  <input id="keyinp" type="password" placeholder="ключ команды" autocomplete="off" spellcheck="false">
+  <button class="sw on" id="keysave">Сохранить</button>
+  <button class="sw" id="keyhide">Позже</button>
+ </div>
 </div>
 
 <main class="wrap" id="main"></main>

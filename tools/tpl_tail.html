@@ -45,16 +45,129 @@ const BYDAY={};SLOTS.forEach(s=>(BYDAY[s.day]=BYDAY[s.day]||[]).push(s));
 const ALLDAYS=Object.keys(BYDAY).sort();
 const FIRST=ALLDAYS[0], LAST=ALLDAYS[ALLDAYS.length-1];
 
+/* ================= общее состояние ================= */
+/* Кто из экспертов активен и что отмечено выполненным — лежит в общей базе
+   (сервис на Railway, /server в этом же репозитории), поэтому изменения,
+   сделанные на одном компьютере, видны на всех остальных.
+   Локально держим только зеркало (чтобы страница открылась без сети)
+   и очередь ещё не отправленных правок. */
+const API='https://api-production-02c3.up.railway.app';
+const LS_OLD='teamcal_done_v1', LS_MIRROR='teamcal_mirror_v2', LS_QUEUE='teamcal_queue_v2', LS_KEY='teamcal_key_v2';
+const lsGet=(k,d)=>{try{const v=localStorage.getItem(k);return v===null?d:JSON.parse(v)}catch(e){return d}};
+const lsSet=(k,v)=>{try{localStorage.setItem(k,JSON.stringify(v))}catch(e){}};
+
+/* Читать состояние может кто угодно, менять — только с ключом команды.
+   Ключ вводится один раз в каждом браузере (или приходит ссылкой ?key=…),
+   поэтому в открытом репозитории страницы его нет. */
+let APIKEY=lsGet(LS_KEY,'')||'';
+(function keyFromUrl(){
+ const q=new URLSearchParams(location.search).get('key');
+ if(q&&q.trim()){APIKEY=q.trim();lsSet(LS_KEY,APIKEY);
+  history.replaceState(null,'',location.pathname+location.hash)}
+})();
+const canWrite=()=>!!APIKEY;
+
+let done=new Set(), inactive=new Set(), rev=-1;
+let queue=lsGet(LS_QUEUE,[]) || [], flushing=false, syncAt='';
+
+function applyPatch(p){
+ Object.entries(p.experts||{}).forEach(([n,a])=>a?inactive.delete(n):inactive.add(n));
+ Object.entries(p.done||{}).forEach(([id,v])=>v?done.add(id):done.delete(id));
+}
+function adopt(s){
+ rev=s.rev===undefined?rev:s.rev;
+ inactive=new Set(Object.entries(s.experts||{}).filter(([,v])=>!v.active).map(([n])=>n));
+ done=new Set(Object.keys(s.done||{}));
+ queue.forEach(applyPatch);                       /* неотправленное — поверх серверного */
+ lsSet(LS_MIRROR,{rev:s.rev,experts:s.experts||{},done:s.done||{}});
+}
+const sig=()=>[...inactive].sort().join('|')+'##'+[...done].sort().join('|');
+const stamp=()=>new Date().toLocaleTimeString('ru-RU',{hour:'2-digit',minute:'2-digit'});
+(function boot(){const m=lsGet(LS_MIRROR,null);if(m)adopt(m);else queue.forEach(applyPatch)})();
+
+function setSync(mode){
+ const el=document.getElementById('syncbadge');if(!el)return;
+ el.className='syncbadge'+(mode==='busy'?' busy':mode==='bad'?' bad':'');
+ el.lastElementChild.textContent=
+   mode==='busy'?'сохраняю…':
+   mode==='bad'?(queue.length?'нет связи — сохраню позже':'нет связи с базой'):
+   canWrite()?('общая база'+(syncAt?' · '+syncAt:'')):'только чтение — нужен ключ';
+ el.classList.toggle('ro',mode==='ok'&&!canWrite());
+ el.title=!canWrite()?'Введите ключ команды, чтобы отмечать выполненное и менять состав'
+   :queue.length?'Есть несохранённые изменения, отправлю как появится связь'
+   :'Отметки и состав команды хранятся в общей базе — их видно на всех компьютерах';
+}
+async function api(path,opts){
+ const c=new AbortController(), t=setTimeout(()=>c.abort(),12000);
+ try{
+  const r=await fetch(API+path+(APIKEY?(path.includes('?')?'&':'?')+'key='+encodeURIComponent(APIKEY):''),
+                      Object.assign({signal:c.signal,cache:'no-store'},opts||{}));
+  if(!r.ok)throw new Error('HTTP '+r.status);
+  return await r.json();
+ }finally{clearTimeout(t)}
+}
+async function pull(){
+ if(queue.length)return flush();
+ try{
+  const s=await api('/state');
+  const before=sig(); adopt(s); syncAt=stamp(); setSync('ok'); migrate();
+  if(sig()!==before)render();
+ }catch(e){setSync('bad')}
+}
+async function flush(){
+ if(flushing||!queue.length)return;
+ flushing=true; setSync('busy');
+ const n=queue.length, merged={experts:{},done:{}};
+ queue.slice(0,n).forEach(p=>{Object.assign(merged.experts,p.experts||{});
+                              Object.assign(merged.done,p.done||{})});
+ try{
+  const s=await api('/patch',{method:'POST',headers:{'content-type':'application/json'},
+                              body:JSON.stringify(merged)});
+  queue=queue.slice(n); lsSet(LS_QUEUE,queue);
+  const before=sig(); adopt(s); syncAt=stamp(); setSync('ok');
+  if(sig()!==before)render();
+ }catch(e){setSync('bad')}
+ flushing=false;
+ if(queue.length&&navigator.onLine!==false)setTimeout(flush,15000);
+}
+function change(patch){
+ if(!canWrite()){askKey();render();return}
+ applyPatch(patch); queue.push(patch); lsSet(LS_QUEUE,queue); render(); flush();
+}
+function askKey(){                                 /* показываем полосу ввода ключа */
+ const bar=document.getElementById('keybar');
+ if(!bar)return;
+ bar.hidden=false; bar.classList.add('ask');
+ const inp=document.getElementById('keyinp');
+ inp.focus(); inp.select();
+ bar.scrollIntoView({block:'nearest'});
+}
+function saveKey(v){
+ v=(v||'').trim(); if(!v)return;
+ APIKEY=v; lsSet(LS_KEY,v);
+ document.getElementById('keybar').hidden=true;
+ setSync('busy'); pull().then(()=>{if(queue.length)flush()});
+ render();
+}
+function migrate(){                                /* старые отметки из этого браузера — один раз */
+ const old=lsGet(LS_OLD,null);
+ if(!Array.isArray(old)||!old.length){if(old!==null)localStorage.removeItem(LS_OLD);return}
+ const p={done:{}}; old.forEach(id=>{if(!done.has(id))p.done[id]=true});
+ localStorage.removeItem(LS_OLD);
+ if(Object.keys(p.done).length)change(p);
+}
+
 /* ================= state ================= */
-const LS='teamcal_done_v1';
-let done=new Set();
-try{done=new Set(JSON.parse(localStorage.getItem(LS)||'[]'))}catch(e){}
-const saveDone=()=>{try{localStorage.setItem(LS,JSON.stringify([...done]))}catch(e){}};
 const st={view:'days',who:'all',stages:new Set(ORDER),experts:new Set(EXPERTS.map(e=>e.name)),
           past:false,hideDone:false,
           week:weekStart(TODAY>=FIRST&&TODAY<=LAST?TODAY:FIRST)};
 function weekStart(d){return addDays(d,-dow(d))}
-const pass=s=>st.stages.has(s.stage)&&st.experts.has(s.expert)&&(st.who==='all'||s.who===st.who)
+const isActive=n=>!inactive.has(n);
+const VIS=()=>EXPERTS.filter(e=>isActive(e.name));          /* активные эксперты */
+const OFF=()=>EXPERTS.filter(e=>!isActive(e.name));         /* выключенные */
+const actEvents=()=>DATA.events.filter(e=>isActive(e.expert));
+const pass=s=>isActive(s.expert)&&st.stages.has(s.stage)&&st.experts.has(s.expert)
+              &&(st.who==='all'||s.who===st.who)
               &&!(st.hideDone&&done.has(s.id));
 const daySlots=d=>(BYDAY[d]||[]).filter(pass);
 
@@ -76,7 +189,7 @@ function dayCard(d,opts={}){
  const list=daySlots(d);
  const team=list.filter(s=>s.who==='Команда'), exp=list.filter(s=>s.who==='Эксперт');
  const isToday=d===TODAY, isPast=d<TODAY;
- const abs=EXPERTS.filter(e=>st.experts.has(e.name)&&absentOn(e.name,d));
+ const abs=VIS().filter(e=>st.experts.has(e.name)&&absentOn(e.name,d));
  let g='';
  if(team.length)g+=`<div class="group"><div class="grouplabel"><i></i>Команда делает (${team.length})</div>
    <div class="rows">${team.map(s=>taskRow(s)).join('')}</div></div>`;
@@ -98,7 +211,7 @@ const plural=(n,a,b,c)=>{const m=n%100,k=n%10;return m>10&&m<20?c:k===1?a:k>1&&k
 
 /* ================= views ================= */
 function viewDays(){
- let days=ALLDAYS.filter(d=>daySlots(d).length||EXPERTS.some(e=>st.experts.has(e.name)&&absentOn(e.name,d)));
+ let days=ALLDAYS.filter(d=>daySlots(d).length||VIS().some(e=>st.experts.has(e.name)&&absentOn(e.name,d)));
  if(!st.past)days=days.filter(d=>d>=TODAY);
  if(!days.length)return `<p class="empty" style="padding:30px 0">Ничего не найдено — снимите фильтры или включите «прошедшие дни».</p>`;
  let html='',wk='';
@@ -111,7 +224,7 @@ function viewDays(){
 }
 function viewWeek(){
  const ws=st.week, days=[...Array(7)].map((_,i)=>addDays(ws,i));
- const rows=EXPERTS.filter(e=>st.experts.has(e.name)).map(e=>{
+ const rows=VIS().filter(e=>st.experts.has(e.name)).map(e=>{
   const cells=days.map(d=>{
    const a=absentOn(e.name,d);
    const items=daySlots(d).filter(s=>s.expert===e.name);
@@ -153,7 +266,9 @@ function viewMonth(){
  }).join('')+`</div>`;
 }
 function viewExperts(){
- return `<div class="exgrid" style="margin-top:18px">`+EXPERTS.filter(e=>st.experts.has(e.name)).map(e=>{
+ const offs=OFF();
+ const note=offs.length?`<div class="offnote">Не показаны неактивные: ${offs.map(e=>esc(e.name)).join(', ')} — включить можно во вкладке «Состав команды».</div>`:'';
+ return note+`<div class="exgrid" style="margin-top:18px">`+VIS().filter(e=>st.experts.has(e.name)).map(e=>{
   const evs=DATA.events.filter(x=>x.expert===e.name);
   const cycles=[...new Set(evs.map(x=>x.cycle))];
   const chain=cycles.map(c=>{
@@ -175,6 +290,40 @@ function viewExperts(){
  }).join('')+`</div>`;
 }
 
+function viewRoster(){
+ const line=e=>{
+  const evs=DATA.events.filter(x=>x.expert===e.name);
+  const left=SLOTS.filter(s=>s.expert===e.name&&s.day>=TODAY&&!done.has(s.id));
+  const next=left[0];
+  const on=isActive(e.name);
+  const meta=on
+   ? `${evs.length} ${plural(evs.length,'задача','задачи','задач')} · ${next?'ближайшее: '+STAGES[next.stage].short+' '+fmtShort(next.day):'всё позади'}`
+   : `скрыт из календаря · ${evs.length} ${plural(evs.length,'задача','задачи','задач')} не учитываются`;
+  return `<div class="rrow ${on?'':'off'}">
+    <div class="rinfo">
+     <button class="who rname" data-expert="${esc(e.name)}" style="all:unset;cursor:pointer">${esc(e.name)}</button>
+     <div class="rmeta">${meta}</div>
+    </div>
+    <button class="sw ${on?'on':''}" data-toggle="${esc(e.name)}">${on?'Активен':'Включить'}</button>
+   </div>`};
+ const act=VIS(), off=OFF();
+ return `<div class="panel">
+   <h2>Состав команды</h2>
+   ${canWrite()?'':'<p class="hint" style="color:var(--s4)">Сейчас страница открыта только на чтение: чтобы менять состав, введите ключ команды в полосе над календарём.</p>'}
+   <p class="hint">Выключите эксперта, с которым сейчас не работаем, — его задачи пропадут из всех видов
+    календаря и перестанут учитываться в счётчиках. Данные из его личной таблицы никуда не деваются:
+    вернуть в работу можно в любой момент. Список общий: изменение видно всем, кто откроет страницу.</p>
+   <div class="rgroup">
+    <h3>Активные эксперты <b>${act.length}</b></h3>
+    <div class="roster">${act.length?act.map(line).join(''):'<div class="empty">Все эксперты выключены</div>'}</div>
+   </div>
+   <div class="rgroup">
+    <h3>Неактивные <b>${off.length}</b></h3>
+    <div class="roster">${off.length?off.map(line).join(''):'<div class="empty">Никто не выключен — в календаре вся команда</div>'}</div>
+   </div>
+  </div>`;
+}
+
 /* ================= drawer ================= */
 function openExpert(name){
  const e=BYNAME[name];if(!e)return;
@@ -183,6 +332,7 @@ function openExpert(name){
  document.getElementById('drawer').innerHTML=`<button class="x" id="dx">✕</button>
   <div class="eyebrow">эксперт</div><h2 style="font-size:20px;margin:4px 0 6px">${esc(name)}</h2>
   <a class="lnk" href="${e.sheet}" target="_blank" rel="noopener">Личный контент-календарь ↗</a>
+  <div style="margin-top:12px"><button class="sw ${isActive(name)?'on':''}" data-toggle="${esc(name)}">${isActive(name)?'Активен — выключить':'Неактивен — включить'}</button></div>
   <dl class="facts" style="margin-top:14px">
    <dt>Старт месяца</dt><dd>${esc(e.start||'—')}</dd>
    <dt>Голосовые</dt><dd>${esc(e.voice||'—')}</dd>
@@ -209,19 +359,23 @@ function closeDrawer(){document.getElementById('drawer').classList.remove('on');
 
 /* ================= header ================= */
 function renderHeader(){
+ const act=VIS(), offN=EXPERTS.length-act.length, ev=actEvents();
  document.getElementById('subline').innerHTML=
-  `${EXPERTS.length} экспертов · ${DATA.events.length} задач · период ${fmtShort(FIRST)} — ${fmtShort(LAST)}.2026 · `+
+  `${act.length} ${plural(act.length,'активный эксперт','активных эксперта','активных экспертов')}`+
+  (offN?` (ещё ${offN} ${plural(offN,'выключен','выключено','выключено')})`:'')+
+  ` · ${ev.length} задач · период ${fmtShort(FIRST)} — ${fmtShort(LAST)}.2026 · `+
   `<a href="${DATA.source}" target="_blank" rel="noopener">сводная таблица календарей ↗</a>`;
  const wkStart=weekStart(TODAY), wkEnd=addDays(wkStart,6);
- const inWeek=SLOTS.filter(s=>s.day>=wkStart&&s.day<=wkEnd);
- const todayL=BYDAY[TODAY]||[], future=SLOTS.filter(s=>s.day>=TODAY);
+ const live=SLOTS.filter(s=>isActive(s.expert));
+ const inWeek=live.filter(s=>s.day>=wkStart&&s.day<=wkEnd);
+ const todayL=live.filter(s=>s.day===TODAY), future=live.filter(s=>s.day>=TODAY);
  document.getElementById('stats').innerHTML=[
-  ['Экспертов',EXPERTS.length],['Циклов',new Set(DATA.events.map(e=>e.expert+e.cycle)).size],
-  ['Задач всего',DATA.events.length],['Сегодня',todayL.length],
+  ['Активных экспертов',act.length],['Циклов',new Set(ev.map(e=>e.expert+e.cycle)).size],
+  ['Задач всего',ev.length],['Сегодня',todayL.length],
   ['На этой неделе',inWeek.length],['Осталось впереди',future.length]
  ].map(([k,v])=>`<div class="stat"><b>${v}</b><span>${k}</span></div>`).join('');
  const card=(day,title)=>{
-  const list=(BYDAY[day]||[]);
+  const list=(BYDAY[day]||[]).filter(s=>isActive(s.expert));
   const team=list.filter(s=>s.who==='Команда'),exp=list.filter(s=>s.who==='Эксперт');
   const block=(arr,label,cls)=>arr.length?`<div class="grouplabel ${cls}" style="margin-top:8px"><i></i>${label}</div>
     <div class="nowlist">${arr.map(s=>taskRow(s)).join('')}</div>`:'';
@@ -236,21 +390,23 @@ function renderHeader(){
  document.getElementById('footnote').innerHTML=
   `Собрано из ${EXPERTS.length} личных контент-календарей · данные от ${esc(DATA.generated)} · `+
   `страница пересобирается из таблиц автоматически раз в час · `+
-  `отметки «выполнено» хранятся только в этом браузере`;
+  `состав команды и отметки «выполнено» хранятся в общей базе и видны на всех компьютерах`;
 }
 function renderChips(){
  const c=document.getElementById('chips');
  c.innerHTML=`<span class="chip" data-all="stages">Этапы:</span>`+
   ORDER.map(s=>`<span class="chip ${STAGES[s].cls} ${st.stages.has(s)?'on':'off'}" data-stage="${esc(s)}"><i class="dot"></i>${STAGES[s].short}</span>`).join('')+
   `<span style="width:14px"></span><span class="chip" data-all="experts">Эксперты:</span>`+
-  EXPERTS.map(e=>`<span class="chip ${st.experts.has(e.name)?'on':'off'}" data-expert-f="${esc(e.name)}">${esc(e.name)}</span>`).join('');
+  VIS().map(e=>`<span class="chip ${st.experts.has(e.name)?'on':'off'}" data-expert-f="${esc(e.name)}">${esc(e.name)}</span>`).join('');
 }
 
 /* ================= render ================= */
 function render(){
  renderHeader();renderChips();
  const m=document.getElementById('main');
- m.innerHTML=st.view==='days'?viewDays():st.view==='week'?viewWeek():st.view==='month'?viewMonth():viewExperts();
+ m.innerHTML=st.view==='days'?viewDays():st.view==='week'?viewWeek():st.view==='month'?viewMonth():
+   st.view==='roster'?viewRoster():viewExperts();
+ setSync(queue.length?'bad':'ok');
  [...document.querySelectorAll('#tabs button')].forEach(b=>b.setAttribute('aria-selected',b.dataset.view===st.view));
  if(st.view==='week'){
   document.getElementById('wPrev').onclick=()=>{st.week=addDays(st.week,-7);render()};
@@ -261,12 +417,18 @@ function render(){
 document.addEventListener('click',ev=>{
  const t=ev.target;
  const tab=t.closest('#tabs button'); if(tab){st.view=tab.dataset.view;render();return}
+ const sw=t.closest('[data-toggle]'); if(sw){
+  const n=sw.dataset.toggle;
+  change({experts:{[n]:!isActive(n)}});
+  if(document.getElementById('drawer').classList.contains('on'))openExpert(n);
+  return}
  const ex=t.closest('.who[data-expert]'); if(ex){openExpert(ex.dataset.expert);return}
  const ch=t.closest('.chip'); if(ch){
   if(ch.dataset.stage){st.stages.has(ch.dataset.stage)?st.stages.delete(ch.dataset.stage):st.stages.add(ch.dataset.stage)}
   else if(ch.dataset.expertF){st.experts.has(ch.dataset.expertF)?st.experts.delete(ch.dataset.expertF):st.experts.add(ch.dataset.expertF)}
   else if(ch.dataset.all==='stages'){st.stages=st.stages.size===ORDER.length?new Set():new Set(ORDER)}
-  else if(ch.dataset.all==='experts'){st.experts=st.experts.size===EXPERTS.length?new Set():new Set(EXPERTS.map(e=>e.name))}
+  else if(ch.dataset.all==='experts'){const v=VIS().map(e=>e.name);
+    st.experts=v.every(n=>st.experts.has(n))?new Set():new Set(v)}
   render();return}
  const cell=t.closest('.mcell[data-day]'); if(cell){
   const d=cell.dataset.day;
@@ -285,13 +447,29 @@ document.addEventListener('change',ev=>{
  const t=ev.target;
  if(t.classList.contains('cb')){
   const id=t.closest('.task').dataset.id;
-  t.checked?done.add(id):done.delete(id);saveDone();render();return}
+  if(!canWrite()){t.checked=done.has(id);askKey();return}
+  change({done:{[id]:t.checked}});return}
  if(t.id==='whoSel'){st.who=t.value;render()}
  if(t.id==='pastCb'){st.past=t.checked;render()}
  if(t.id==='doneCb'){st.hideDone=t.checked;render()}
 });
 document.addEventListener('keydown',e=>{if(e.key==='Escape')closeDrawer()});
+
+/* ================= ключ и синхронизация ================= */
+document.addEventListener('click',ev=>{
+ if(ev.target.id==='keysave'){saveKey(document.getElementById('keyinp').value);return}
+ if(ev.target.id==='keyhide'){document.getElementById('keybar').hidden=true;return}
+ if(ev.target.closest('#syncbadge')&&!canWrite()){askKey()}
+});
+document.addEventListener('keydown',ev=>{
+ if(ev.key==='Enter'&&ev.target.id==='keyinp')saveKey(ev.target.value);
+});
+if(!canWrite())document.getElementById('keybar').hidden=false;
 render();
+pull();
+setInterval(()=>{if(!document.hidden)pull()},25000);
+document.addEventListener('visibilitychange',()=>{if(!document.hidden)pull()});
+window.addEventListener('online',()=>pull());
 </script>
 </body>
 </html>
