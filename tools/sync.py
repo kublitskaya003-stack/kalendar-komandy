@@ -12,7 +12,7 @@ import os, re, json, sys
 from datetime import datetime, timedelta, timezone
 
 SVOD = '1a2P_pGPWy2UQ_fx9rzSlPcrTgjRaj_MWLV3C0B0aEjk'
-EXCLUDE = ['Заикина']                     # кого не берём в сводный календарь
+EXCLUDE = []                              # кого не берём в сводный календарь
 STAGES = ['Темы', 'Голосовые', 'Сценарий', 'Съёмка видео', 'Монтаж и публикация']
 HERE = os.path.dirname(os.path.abspath(__file__))
 
